@@ -1,7 +1,7 @@
 requests
 websocket
 tk
-tempfile
+temp
 alpaca-trade-api
 pillow
 plotly
