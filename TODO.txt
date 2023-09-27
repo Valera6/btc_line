@@ -1,0 +1,13 @@
+-check that VIX returns exactly 1h back when call is fully within 1 market session, if not
+split limit size
+
+-add update of Inflows into the update()
+check settings before adding them in the main construct function, then check for existense of it in update.
+
+-dump the windows as individual objects into different windows, and then have them all bear a x0y0x1y1 markers, as for them being the only point of interconnectedness they have with other windows?
+
+-learn how having classes and functions in separate modules changes things. Maybe just pack it all up into one single init or something. Maybe just have a defined __main__?
+
+-learn the right way to create the inheritance structures
+
+-implement self.root.withdraw(), might fix everything on all devices
