@@ -1,5 +1,5 @@
 # Setup
-## Windows
+## Esoteric gaming OS, otherwise known as Windows
 >git clone https://github.com/Valera6/BTCLine
 
 >open keys.json
