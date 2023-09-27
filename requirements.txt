@@ -1,6 +1,6 @@
 requests
 websocket
-tkinter
+tk
 tempfile
 alpaca-trade-api
 pillow
