@@ -4,7 +4,7 @@
 
 >open keys.json
 >go to https://app.alpaca.markets/paper/dashboard/overview, get your keys for alpaca, replace the test ones
->go to https://twelvedata.com/register, get your keys for twelvedate, replace the test ones
+>go to https://twelvedata.com/register, get your keys for twelvedata, replace the test ones
 
 >make a shortcut of main.py, place into shell:startup
 ## Not Windows
