@@ -9,6 +9,7 @@
 >make a shortcut of main.py, place into shell:startup
 ## Not Windows
 >Good luck.
+// Try wine or something
 # Usage
 >Script shows BTC price and %longs always.
 >If keys are connected, automatically adds a line for SPY on market open.
