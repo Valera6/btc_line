@@ -6,6 +6,7 @@ use v_utils::io::ExpandedPath;
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
 	pub comparison_offset_h: usize,
+	pub label: bool,
 	pub spy: Spy,
 	pub output: String,
 }

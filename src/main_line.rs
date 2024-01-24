@@ -13,10 +13,15 @@ pub struct MainLine {
 	pub percent_longs: Option<f64>,
 }
 impl MainLine {
-	pub fn display(&self, _config: &Config) -> String {
-		let btcusdt_display = self.btcusdt.map_or("None".to_string(), |v| format!("{:.0}", v));
-		let percent_longs_display = self.percent_longs.map_or("".to_string(), |v| format!("|{:.2}", v));
-		format!("{}{}", btcusdt_display, percent_longs_display)
+	pub fn display(&self, config: &Config) -> String {
+		let price_line = self.btcusdt.map_or("None".to_string(), |v| format!("{:.0}", v));
+		let mut longs_line = self.percent_longs.map_or("".to_string(), |v| format!("{:.2}", v));
+
+		if config.label {
+			longs_line = format!("L/S:{}", longs_line);
+		}
+
+		format!("{}|{}", price_line, longs_line)
 	}
 
 	pub async fn websocket(self_arc: Arc<Mutex<Self>>, config: Config, output: Arc<Mutex<Output>>) {

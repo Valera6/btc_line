@@ -12,11 +12,15 @@ pub struct AdditionalLine {
 }
 
 impl AdditionalLine {
-	pub fn display(&self, _config: &Config) -> String {
-		let oi = self.open_interest_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
-		let v = self.btc_volume_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
-		//TODO!: add labels only if this option is on
-		format!("OI:{} V:{}", oi, v)
+	pub fn display(&self, config: &Config) -> String {
+		let mut oi_str = self.open_interest_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
+		let mut v_str = self.btc_volume_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
+
+		if config.label {
+			oi_str = format!("OI:{}", oi_str);
+			v_str = format!("V:{}", v_str);
+		}
+		format!("{} {}", oi_str, v_str)
 	}
 
 	pub async fn collect(&mut self, config: &Config) {
