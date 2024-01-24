@@ -22,9 +22,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
 	/// Start the program
+	/// Note: to toggle the additional_line, pipe "false" to /tmp/btc_line_additional_line, and "true" to enable it again.
+	/// ```bash
+	/// echo "false" > /tmp/btc_line_additional_line
+	/// ```
 	Start(NoArgs),
-	/// Toggle additional line
-	Toggle(NoArgs),
 }
 #[derive(Args)]
 struct NoArgs {}
@@ -46,15 +48,20 @@ async fn main() {
 
 			let main_line = Arc::new(Mutex::new(main_line::MainLine::default()));
 			let spy_line = Arc::new(Mutex::new(spy_line::SpyLine::default()));
-			let mut additional_line = additional_line::AdditionalLine::default();
+			let additional_line = Arc::new(Mutex::new(additional_line::AdditionalLine::default()));
 
 			let _ = tokio::spawn(main_line::MainLine::websocket(main_line.clone(), config.clone(), output.clone()));
 			let _ = tokio::spawn(spy_line::SpyLine::websocket(spy_line.clone(), config.clone(), output.clone()));
+			let _ = tokio::spawn(additional_line::AdditionalLine::listen_to_pipe(
+				additional_line.clone(),
+				config.clone(),
+				output.clone(),
+			));
 			let mut cycle = 0;
 			loop {
 				{
 					let main_line_handler = main_line::MainLine::collect(main_line.clone());
-					let additional_line_handler = additional_line.collect(&config);
+					let additional_line_handler = additional_line::AdditionalLine::collect(additional_line.clone(), &config);
 
 					let _ = main_line_handler.await;
 					let _ = additional_line_handler.await;
@@ -63,7 +70,7 @@ async fn main() {
 				{
 					let mut output_lock = output.lock().unwrap();
 					output_lock.main_line_str = main_line.lock().unwrap().display(&config);
-					output_lock.additional_line_str = additional_line.display(&config);
+					output_lock.additional_line_str = additional_line.lock().unwrap().display(&config);
 					output_lock.out().unwrap();
 				}
 
@@ -73,9 +80,6 @@ async fn main() {
 				}
 				tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
 			}
-		}
-		Commands::Toggle(_) => {
-			unimplemented!();
 		}
 	}
 }

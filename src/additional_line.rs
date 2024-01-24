@@ -3,16 +3,33 @@ use crate::utils::NowThen;
 use anyhow::{anyhow, Result};
 use reqwest;
 use serde::Deserialize;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::sync::{Arc, Mutex};
 
 //TODO!: implement tiny graphics
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct AdditionalLine {
 	open_interest_change: Option<NowThen>,
 	btc_volume_change: Option<NowThen>,
+	enabled: bool,
+}
+impl Default for AdditionalLine {
+	fn default() -> Self {
+		Self {
+			open_interest_change: None,
+			btc_volume_change: None,
+			enabled: true,
+		}
+	}
 }
 
 impl AdditionalLine {
 	pub fn display(&self, config: &Config) -> String {
+		if !self.enabled {
+			return "".to_string();
+		}
+
 		let mut oi_str = self.open_interest_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
 		let mut v_str = self.btc_volume_change.as_ref().map_or("None".to_string(), |v| format!("{}", v));
 
@@ -23,27 +40,51 @@ impl AdditionalLine {
 		format!("{} {}", oi_str, v_str)
 	}
 
-	pub async fn collect(&mut self, config: &Config) {
+	pub async fn collect(self_arc: Arc<Mutex<Self>>, config: &Config) {
 		let comparison_offset_h = config.comparison_offset_h;
 
 		let client = reqwest::Client::new();
 		let open_interest_change_handler = get_open_interest_change(&client, "BTCUSDT", comparison_offset_h);
 		let btc_volume_change_handler = get_btc_volume_change(&client, comparison_offset_h);
 
-		self.open_interest_change = match open_interest_change_handler.await {
+		self_arc.lock().unwrap().open_interest_change = match open_interest_change_handler.await {
 			Ok(open_interest_change) => Some(open_interest_change),
 			Err(e) => {
 				eprintln!("Failed to get Open Interest: {}", e);
 				None
 			}
 		};
-		self.btc_volume_change = match btc_volume_change_handler.await {
+		self_arc.lock().unwrap().btc_volume_change = match btc_volume_change_handler.await {
 			Ok(btc_volume_change) => Some(btc_volume_change),
 			Err(e) => {
 				eprintln!("Failed to get BTC Volume: {}", e);
 				None
 			}
 		};
+	}
+
+	pub async fn listen_to_pipe(self_arc: Arc<Mutex<Self>>, config: Config, output: Arc<Mutex<crate::output::Output>>) {
+		let pipe_path = "/tmp/btc_line_additional_line";
+
+		loop {
+			// Attempt to open the named pipe; this will block until the other side is opened for writing
+			if let Ok(file) = File::open(pipe_path) {
+				let reader = BufReader::new(file);
+				for line in reader.lines() {
+					if let Some(line) = line.ok() {
+						if let Ok(arg) = line.parse::<bool>() {
+							if self_arc.lock().unwrap().enabled != arg {
+								self_arc.lock().unwrap().enabled = arg;
+								let mut output_lock = output.lock().unwrap();
+								output_lock.additional_line_str = self_arc.lock().unwrap().display(&config);
+								output_lock.out().unwrap();
+							}
+						}
+					}
+				}
+			}
+			tokio::time::sleep(tokio::time::Duration::from_millis(125)).await;
+		}
 	}
 }
 
