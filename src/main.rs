@@ -49,6 +49,9 @@ async fn main() {
 			let main_line = Arc::new(Mutex::new(main_line::MainLine::default()));
 			let spy_line = Arc::new(Mutex::new(spy_line::SpyLine::default()));
 			let additional_line = Arc::new(Mutex::new(additional_line::AdditionalLine::default()));
+			if config.additional_line.show_by_default {
+				additional_line.lock().unwrap().enabled = true;
+			}
 
 			let _ = tokio::spawn(main_line::MainLine::websocket(main_line.clone(), config.clone(), output.clone()));
 			let _ = tokio::spawn(spy_line::SpyLine::websocket(spy_line.clone(), config.clone(), output.clone()));

@@ -8,20 +8,11 @@ use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
 //TODO!: implement tiny graphics
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct AdditionalLine {
 	open_interest_change: Option<NowThen>,
 	btc_volume_change: Option<NowThen>,
-	enabled: bool,
-}
-impl Default for AdditionalLine {
-	fn default() -> Self {
-		Self {
-			open_interest_change: None,
-			btc_volume_change: None,
-			enabled: true,
-		}
-	}
+	pub enabled: bool,
 }
 
 impl AdditionalLine {

@@ -5,9 +5,10 @@ use v_utils::io::ExpandedPath;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
+	pub spy: Spy,
+	pub additional_line: AdditionalLine,
 	pub comparison_offset_h: usize,
 	pub label: bool,
-	pub spy: Spy,
 	pub output: String,
 }
 
@@ -15,6 +16,11 @@ pub struct Config {
 pub struct Spy {
 	pub alpaca_key: String,
 	pub alpaca_secret: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct AdditionalLine {
+	pub show_by_default: bool,
 }
 
 impl TryFrom<ExpandedPath> for Config {
