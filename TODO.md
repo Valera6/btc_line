@@ -1,0 +1,1 @@
+- [ ] make a thread for additional_line, that checks 10 times a second that the SHOW_BTC_LINE env var is still true.
