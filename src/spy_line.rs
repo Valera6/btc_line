@@ -2,7 +2,8 @@ use crate::config::Config;
 use crate::output::Output;
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::{Arc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -35,50 +36,106 @@ impl SpyLine {
 	}
 }
 
+//TODO!!!: handle connection reconnect on spy websocket
 async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, _output: Arc<Mutex<Output>>, alpaca_key: &str, alpaca_secret: &str) {
-	//Failed to connect: Http(Response { status: 403, version: HTTP/1.1, headers: {"date": "Sat, 13 Jan 2024 23:34:58 GMT", "content-type": "text/html", "content-length": "146", "connection": "keep-alive", "strict-transport-security": "max-age=15724800; includeSubDomains", "x-request-id": "4c6899bd9766d860988c3728a23a08e2"}, body: Some([60, 104, 116, 109, 108, 62, 13, 10, 60, 104, 101, 97, 100, 62, 60, 116, 105, 116, 108, 101, 62, 52, 48, 51, 32, 70, 111, 114, 98, 105, 100, 100, 101, 110, 60, 47, 116, 105, 116, 108, 101, 62, 60, 47, 104, 101, 97, 100, 62, 13, 10, 60, 98, 111, 100, 121, 62, 13, 10, 60, 99, 101, 110, 116, 101, 114, 62, 60, 104, 49, 62, 52, 48, 51, 32, 70, 111, 114, 98, 105, 100, 100, 101, 110, 60, 47, 104, 49, 62, 60, 47, 99, 101, 110, 116, 101, 114, 62, 13, 10, 60, 104, 114, 62, 60, 99, 101, 110, 116, 101, 114, 62, 110, 103, 105, 110, 120, 60, 47, 99, 101, 110, 116, 101, 114, 62, 13, 10, 60, 47, 98, 111, 100, 121, 62, 13, 10, 60, 47, 104, 116, 109, 108, 62, 13, 10]) })
-
-	let url = url::Url::parse("wss://data.alpaca.markets/stream").unwrap();
+	let url = url::Url::parse("wss://stream.data.alpaca.markets/v2/iex").unwrap();
 	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
 
 	let (mut write, mut read) = ws_stream.split();
 
 	let auth_message = json!({
-		"action": "authenticate",
-		"data": {
-			"key_id": alpaca_key.to_owned(),
-			"secret_key": alpaca_secret.to_owned()
-		}
-	})
-	.to_string();
-
-	write.send(Message::Text(auth_message)).await.unwrap();
-
-	let listen_message = json!({
-		"action": "listen",
-		"data": {
-			"streams": ["T.SPY"]
-		}
+		"action": "auth",
+		"key": alpaca_key.to_owned(),
+		"secret": alpaca_secret.to_owned()
 	})
 	.to_string();
 
 	if let Some(message) = read.next().await {
 		let message = message.unwrap();
-		println!("Received a message: {:?}", message);
+		println!("Connected Message: {:?}", message);
+		assert_eq!(message, Message::Text("[{\"T\":\"success\",\"msg\":\"connected\"}]".to_string()));
 
-		if let Ok(msg) = message.to_text() {
-			let msg: Value = serde_json::from_str(msg).unwrap();
-			if msg["stream"] == "authorization" && msg["data"]["status"] == "authorized" {
-				// Auth successful, subscribe to channels
-				write.send(Message::Text(listen_message)).await.unwrap();
-			}
-		}
+		write.send(Message::Text(auth_message)).await.unwrap();
 	}
+
+	let listen_message = json!({
+		"action":"subscribe",
+		"trades":["SPY"]
+	})
+	.to_string();
+
+	if let Some(message) = read.next().await {
+		let message = message.unwrap();
+		println!("Authenticated Message: {:?}", message);
+		assert_eq!(message, Message::Text("[{\"T\":\"success\",\"msg\":\"authenticated\"}]".to_string()));
+
+		write.send(Message::Text(listen_message)).await.unwrap();
+	}
+
+	if let Some(message) = read.next().await {
+		let message = message.unwrap();
+		println!("Subscription Message: {:?}", message);
+		assert_eq!(message, Message::Text("[{\"T\":\"subscription\",\"trades\":[\"SPY\"],\"quotes\":[],\"bars\":[],\"updatedBars\":[],\"dailyBars\":[],\"statuses\":[],\"lulds\":[],\"corrections\":[\"SPY\"],\"cancelErrors\":[\"SPY\"]}]".to_string()));
+	}
+
+	let refresh_arc = self_arc.clone();
+	tokio::spawn(async move {
+		loop {
+			if refresh_arc.lock().unwrap().last_message_timestamp < Utc::now() - chrono::Duration::seconds(10 * 60) {
+				if refresh_arc.lock().unwrap().spy_price.is_some() {
+					refresh_arc.lock().unwrap().spy_price = None;
+				}
+			}
+			tokio::time::sleep(tokio::time::Duration::from_secs(5 * 60)).await;
+		}
+	});
 
 	while let Some(message) = read.next().await {
 		let message = message.unwrap();
-		if message.is_text() || message.is_binary() {
-			println!("Received a message: {:?}", message);
+		println!("Message: {:?}", &message);
+
+		match message {
+			Message::Ping(ref data) if data.is_empty() => {
+				println!("We got pinged");
+			}
+			Message::Text(ref contents) => match serde_json::from_str::<AlpacaTrade>(contents) {
+				Ok(alpaca_trade) => {
+					println!("LETS GOOOOO: {:?}", alpaca_trade);
+					if alpaca_trade.symbol == "SPY" {
+						let mut lock = self_arc.lock().unwrap();
+						lock.spy_price = Some(alpaca_trade.trade_price);
+						lock.last_message_timestamp = Utc::now();
+					}
+				}
+				Err(e) => {
+					eprintln!("Text but not a quote: {:?}", e);
+				}
+			},
+			_ => {
+				println!("Some Other Message: {:?}", message);
+			}
 		}
 	}
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AlpacaTrade {
+	#[serde(rename = "T")]
+	pub message_type: String, // Always "t" for trade endpoint
+	#[serde(rename = "S")]
+	pub symbol: String,
+	#[serde(rename = "i")]
+	pub trade_id: i32,
+	#[serde(rename = "x")]
+	pub exchange_code: String,
+	#[serde(rename = "p")]
+	pub trade_price: f64, // Assuming "number" is a floating point number
+	#[serde(rename = "s")]
+	pub trade_size: i32,
+	#[serde(rename = "c")]
+	pub trade_condition: Vec<String>, // Assuming "array" is a vector of strings
+	#[serde(rename = "t")]
+	pub timestamp: String, // Consider using a more specific type like chrono::DateTime if you need to manipulate dates
+	#[serde(rename = "z")]
+	pub tape: String,
 }
