@@ -1,133 +1,81 @@
-use anyhow::{anyhow, Result};
-use futures_util::StreamExt;
-use reqwest;
-use serde_json::Value;
+mod additional_line;
+pub mod config;
+mod main_line;
+pub mod output;
+mod spy_line;
+pub mod utils;
+use clap::{Args, Parser, Subcommand};
+use config::Config;
+use output::Output;
 use std::sync::{Arc, Mutex};
-use tokio_tungstenite::connect_async;
+use v_utils::io::ExpandedPath;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+	#[command(subcommand)]
+	command: Commands,
+	#[arg(long, default_value = "~/.config/btc_line.toml")]
+	config: ExpandedPath,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+	/// Start the program
+	Start(NoArgs),
+	/// Toggle additional line
+	Toggle(NoArgs),
+}
+#[derive(Args)]
+struct NoArgs {}
 
 #[tokio::main]
 async fn main() {
-	let main_line = Arc::new(Mutex::new(MainLine::default()));
-
-	//TODO!!!: make restart on loss of connection //brownie points for erroring on invalid request
-	let _binance_websocket_handler = tokio::spawn(binance_websocket_listen(main_line.clone()));
-	let mut cycle = 0;
-	loop {
-		// start collecting all lines simultaneously
-		let main_line_handler = MainLine::collect(main_line.clone());
-		// ...
-
-		// Await everything
-		let _ = main_line_handler.await;
-		// ...
-
-		// Display everything
-		println!("{}", main_line.lock().unwrap().display());
-
-		cycle += 1;
-		if cycle == 16 {
-			cycle = 1; // rolls to 1, so I can make special cases for 0
+	let cli = Cli::parse();
+	let config = match Config::try_from(cli.config) {
+		Ok(cfg) => cfg,
+		Err(e) => {
+			eprintln!("Error: {}", e);
+			std::process::exit(1);
 		}
-		tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-	}
-}
+	};
 
-#[derive(Default, Debug)]
-struct MainLine {
-	pub btcusdt: Option<f32>,
-	pub percent_longs: Option<f32>,
-}
-impl MainLine {
-	pub fn display(&self) -> String {
-		let btcusdt_display = self.btcusdt.map_or("None".to_string(), |v| format!("{:.0}", v));
-		let percent_longs_display = self.percent_longs.map_or("".to_string(), |v| format!("|{:.2}", v));
-		format!("{}{}", btcusdt_display, percent_longs_display)
-	}
-}
+	match cli.command {
+		Commands::Start(_) => {
+			let output = Arc::new(Mutex::new(Output::new(config.clone())));
 
-async fn binance_websocket_listen(main_line: Arc<Mutex<MainLine>>) {
-	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
-	let url = url::Url::parse(address).unwrap();
-	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-	println!(" ++ Connected ++ ");
-	let (_, read) = ws_stream.split();
+			let main_line = Arc::new(Mutex::new(main_line::MainLine::default()));
+			let spy_line = Arc::new(Mutex::new(spy_line::SpyLine::default()));
+			let mut additional_line = additional_line::AdditionalLine::default();
 
-	read.for_each(|message| {
-		let main_line = main_line.clone(); // Cloning the Arc for each iteration
-		async move {
-			let data = message.unwrap().into_data();
-			match serde_json::from_slice::<Value>(&data) {
-				Ok(json) => {
-					if let Some(price_str) = json.get("p") {
-						let price: f32 = price_str.as_str().unwrap().parse().unwrap();
-						let main_line_str: String;
-						{
-							let mut main_line = main_line.lock().unwrap();
-							main_line.btcusdt = Some(price);
-							main_line_str = main_line.display();
-						}
-						println!("{}", main_line_str);
-					}
+			let _ = tokio::spawn(main_line::MainLine::websocket(main_line.clone(), config.clone(), output.clone()));
+			let _ = tokio::spawn(spy_line::SpyLine::websocket(spy_line.clone(), config.clone(), output.clone()));
+			let mut cycle = 0;
+			loop {
+				{
+					let main_line_handler = main_line::MainLine::collect(main_line.clone());
+					let additional_line_handler = additional_line.collect(&config);
+
+					let _ = main_line_handler.await;
+					let _ = additional_line_handler.await;
 				}
-				Err(e) => {
-					println!("Failed to parse message as JSON: {}", e);
+
+				{
+					let mut output_lock = output.lock().unwrap();
+					output_lock.main_line_str = main_line.lock().unwrap().display(&config);
+					output_lock.additional_line_str = additional_line.display(&config);
+					output_lock.out().unwrap();
 				}
+
+				cycle += 1;
+				if cycle == 16 {
+					cycle = 1; // rolls to 1, so I can make special cases for 0
+				}
+				tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
 			}
 		}
-	})
-	.await;
-}
-
-impl MainLine {
-	pub async fn collect(self_arc: Arc<Mutex<MainLine>>) {
-		let percent_longs_handler = get_percent_longs("BTCUSDT", PercentLongsScope::Global);
-
-		let percent_longs: Option<f32> = match percent_longs_handler.await {
-			Ok(percent_longs) => Some(percent_longs as f32),
-			Err(e) => {
-				eprintln!("Failed to get LSR: {}", e);
-				None
-			}
-		};
-
-		let mut self_lock = self_arc.lock().unwrap();
-		self_lock.percent_longs = percent_longs;
-	}
-}
-
-#[allow(dead_code)]
-enum PercentLongsScope {
-	Global,
-	Top,
-}
-impl PercentLongsScope {
-	fn request_url_insertions_tuple(&self) -> (String, String) {
-		match self {
-			PercentLongsScope::Global => ("global".to_string(), "Account".to_string()),
-			PercentLongsScope::Top => ("top".to_string(), "Position".to_string()),
+		Commands::Toggle(_) => {
+			unimplemented!();
 		}
-	}
-}
-async fn get_percent_longs(symbol_str: &str, type_: PercentLongsScope) -> Result<f64> {
-	let mut symbol = symbol_str.to_uppercase();
-	if !symbol.contains("USDT") {
-		symbol = format!("{}USDT", symbol);
-	}
-
-	let (ins_0, ins_1) = type_.request_url_insertions_tuple();
-
-	let url = format!(
-		"https://fapi.binance.com/futures/data/{}LongShort{}Ratio?symbol={}&period=5m&limit=1",
-		ins_0, ins_1, symbol
-	);
-
-	let resp = reqwest::get(&url).await?;
-	let json: Vec<Value> = resp.json().await?;
-	if let Some(long_account_str) = json.get(0).and_then(|item| item["longAccount"].as_str()) {
-		long_account_str
-			.parse::<f64>()
-			.map_err(|e| anyhow!("Failed to parse 'longAccount' as f64: {}", e))
-	} else {
-		Err(anyhow!("'longAccount' field missing or not a string in response: {:?}", json))
 	}
 }
