@@ -52,7 +52,7 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 
 	if let Some(message) = read.next().await {
 		let message = message.unwrap();
-		println!("Connected Message: {:?}", message);
+		eprintln!("Connected Message: {:?}", message);
 		assert_eq!(message, Message::Text("[{\"T\":\"success\",\"msg\":\"connected\"}]".to_string()));
 
 		write.send(Message::Text(auth_message)).await.unwrap();
@@ -66,7 +66,7 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 
 	if let Some(message) = read.next().await {
 		let message = message.unwrap();
-		println!("Authenticated Message: {:?}", message);
+		eprintln!("Authenticated Message: {:?}", message);
 		assert_eq!(message, Message::Text("[{\"T\":\"success\",\"msg\":\"authenticated\"}]".to_string()));
 
 		write.send(Message::Text(listen_message)).await.unwrap();
@@ -74,7 +74,7 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 
 	if let Some(message) = read.next().await {
 		let message = message.unwrap();
-		println!("Subscription Message: {:?}", message);
+		eprintln!("Subscription Message: {:?}", message);
 		assert_eq!(message, Message::Text("[{\"T\":\"subscription\",\"trades\":[\"SPY\"],\"quotes\":[],\"bars\":[],\"updatedBars\":[],\"dailyBars\":[],\"statuses\":[],\"lulds\":[],\"corrections\":[\"SPY\"],\"cancelErrors\":[\"SPY\"]}]".to_string()));
 	}
 
