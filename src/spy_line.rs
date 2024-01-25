@@ -15,7 +15,7 @@ pub struct SpyLine {
 }
 
 impl SpyLine {
-	pub fn display(&self, _config: &Config) -> String {
+	pub fn display(&self) -> String {
 		self.spy_price.map_or_else(|| "".to_string(), |v| format!("{:.2}", v))
 	}
 
@@ -37,7 +37,7 @@ impl SpyLine {
 }
 
 //TODO!!!: handle connection reconnect on spy websocket
-async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, _output: Arc<Mutex<Output>>, alpaca_key: &str, alpaca_secret: &str) {
+async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<Output>>, alpaca_key: &str, alpaca_secret: &str) {
 	let url = url::Url::parse("wss://stream.data.alpaca.markets/v2/iex").unwrap();
 	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
 
@@ -92,19 +92,26 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, _output: Arc<Mutex<
 
 	while let Some(message) = read.next().await {
 		let message = message.unwrap();
-		println!("Message: {:?}", &message);
-
 		match message {
 			Message::Ping(ref data) if data.is_empty() => {
 				println!("We got pinged");
 			}
-			Message::Text(ref contents) => match serde_json::from_str::<AlpacaTrade>(contents) {
-				Ok(alpaca_trade) => {
-					println!("LETS GOOOOO: {:?}", alpaca_trade);
+			Message::Text(ref contents) => match serde_json::from_str::<Vec<AlpacaTrade>>(contents) {
+				Ok(alpaca_trades) => {
+					let alpaca_trade = &alpaca_trades[0];
 					if alpaca_trade.symbol == "SPY" {
-						let mut lock = self_arc.lock().unwrap();
-						lock.spy_price = Some(alpaca_trade.trade_price);
-						lock.last_message_timestamp = Utc::now();
+						let spy_str: String;
+						{
+							let mut lock = self_arc.lock().unwrap();
+							lock.spy_price = Some(alpaca_trade.trade_price);
+							lock.last_message_timestamp = Utc::now();
+							spy_str = lock.display();
+						}
+						{
+							let mut output_lock = output.lock().unwrap();
+							output_lock.spy_line_str = spy_str;
+							output_lock.out().unwrap();
+						}
 					}
 				}
 				Err(e) => {
@@ -125,17 +132,15 @@ pub struct AlpacaTrade {
 	#[serde(rename = "S")]
 	pub symbol: String,
 	#[serde(rename = "i")]
-	pub trade_id: i32,
+	pub trade_id: i64,
 	#[serde(rename = "x")]
 	pub exchange_code: String,
 	#[serde(rename = "p")]
-	pub trade_price: f64, // Assuming "number" is a floating point number
+	pub trade_price: f64,
 	#[serde(rename = "s")]
-	pub trade_size: i32,
+	pub trade_size: f64,
 	#[serde(rename = "c")]
 	pub trade_condition: Vec<String>, // Assuming "array" is a vector of strings
 	#[serde(rename = "t")]
-	pub timestamp: String, // Consider using a more specific type like chrono::DateTime if you need to manipulate dates
-	#[serde(rename = "z")]
-	pub tape: String,
+	pub timestamp: String, // iso format, could parse to chrono immediately, but don't see a point
 }
