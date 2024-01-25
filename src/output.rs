@@ -9,6 +9,7 @@ pub struct Output {
 	pub additional_line_str: String,
 }
 
+//? potentially, could store last modified for every value, subsequently that all of them are recent enough when called from the main loop.
 impl Output {
 	pub fn out(&self) -> Result<()> {
 		if self.config.output == "eww".to_owned() {
