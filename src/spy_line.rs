@@ -94,7 +94,7 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 		let message = message.unwrap();
 		match message {
 			Message::Ping(ref data) if data.is_empty() => {
-				println!("We got pinged");
+				//erpintln!("SPY ping");
 			}
 			Message::Text(ref contents) => match serde_json::from_str::<Vec<AlpacaTrade>>(contents) {
 				Ok(alpaca_trades) => {
@@ -119,7 +119,7 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 				}
 			},
 			_ => {
-				println!("Some Other Message: {:?}", message);
+				eprintln!("Message from alpaca, that is not text or ping: {:?}", message);
 			}
 		}
 	}
