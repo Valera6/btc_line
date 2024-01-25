@@ -79,6 +79,7 @@ impl AdditionalLine {
 	}
 }
 
+/// Compares btc OI today against 24h ago (changes based on `comparison_offset_h`)
 async fn get_open_interest_change(client: &reqwest::Client, symbol: &str, comparison_offset_h: usize) -> Result<NowThen> {
 	let url = format!(
 		"https://fapi.binance.com/futures/data/openInterestHist?symbol={}&period=5m&limit={}",
@@ -100,10 +101,12 @@ async fn get_open_interest_change(client: &reqwest::Client, symbol: &str, compar
 	}
 }
 
+/// Compares two last periods of `comparison_offset_h` hours. Default is yesterday against the day before.
 async fn get_btc_volume_change(client: &reqwest::Client, comparison_offset_h: usize) -> Result<NowThen> {
+	let interval = comparison_offset_h * 12;
 	let url = format!(
 		"https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit={}",
-		comparison_offset_h * 12 + 288
+		interval + interval
 	);
 
 	let response = client.get(&url).send().await?;
@@ -111,7 +114,7 @@ async fn get_btc_volume_change(client: &reqwest::Client, comparison_offset_h: us
 		let json_string = response.text().await?;
 		let r: Vec<Kline> = serde_json::from_str(&json_string)?;
 
-		let split = r.split_at(288);
+		let split = r.split_at(interval);
 		let now: f64 = split.0.iter().map(|v| v.quote_asset_volume.parse::<f64>().unwrap()).sum();
 		let then: f64 = split.1.iter().map(|v| v.quote_asset_volume.parse::<f64>().unwrap()).sum();
 
