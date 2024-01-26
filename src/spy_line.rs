@@ -79,11 +79,17 @@ async fn spy_websocket_listen(self_arc: Arc<Mutex<SpyLine>>, output: Arc<Mutex<O
 	}
 
 	let refresh_arc = self_arc.clone();
+	let refresh_output = output.clone();
 	tokio::spawn(async move {
 		loop {
 			if refresh_arc.lock().unwrap().last_message_timestamp < Utc::now() - chrono::Duration::seconds(10 * 60) {
 				if refresh_arc.lock().unwrap().spy_price.is_some() {
 					refresh_arc.lock().unwrap().spy_price = None;
+					{
+						let mut output_lock = refresh_output.lock().unwrap();
+						output_lock.spy_line_str = "".to_string();
+						output_lock.out().unwrap();
+					}
 				}
 			}
 			tokio::time::sleep(tokio::time::Duration::from_secs(5 * 60)).await;
