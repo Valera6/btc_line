@@ -1,1 +1,1 @@
-- [ ] make a thread for additional_line, that checks 10 times a second that the SHOW_BTC_LINE env var is still true.
+- [ ] Add EMA of 1m tf variance over the past hour of BTCUSDT and SPY, shown in percentage points
